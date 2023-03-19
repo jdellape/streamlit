@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import duckdb
-from datetime import datetime, time, date, timedelta
+from datetime import time, date, timedelta
 
 st.image("https://thumbs.gfycat.com/OblongImportantHowlermonkey-size_restricted.gif")
 
@@ -41,9 +41,9 @@ business_hours_window = st.slider(
 
 start, close = business_hours_window
 
-generate_calendar_button = st.button('Click to Generate Hourly Calendar')
+generate_calculation_button = st.button('Click to Calculate Business Time on Task')
 
-if generate_calendar_button:
+if generate_calculation_button:
 
     sql = f"""
             with t1 as (
@@ -67,9 +67,49 @@ if generate_calendar_button:
             order by t1.date_hour asc
             """
     
-    #Write out the dataframe from above query
-    st.dataframe(duckdb.sql(sql).fetchdf())
+    #Store the dataframe from above query
+    calendar_df = duckdb.sql(sql).fetchdf()
 
-    #TODO: incorporate logic from this post: https://docs.getdbt.com/blog/measuring-business-hours-sql-time-on-task
-    
-    generate_calendar_button = False
+    #Pull in the test dataset of tickets
+    fetch_tickets_sql = """SELECT 
+                           ticket_id,
+                           open_time,
+                           CAST(open_time AS DATE) as open_date,
+                           date_part('hour', open_time) as open_hour,
+                           close_time,
+                           CAST(close_time AS DATE) as close_date,
+                           date_part('hour', close_time) as close_hour
+                           FROM read_csv_auto('data/test_data.csv')
+                        """
+    ticket_table = duckdb.sql(fetch_tickets_sql).fetchdf()
+
+    #Apply sql logic to calculate business time on task: https://docs.getdbt.com/blog/measuring-business-hours-sql-time-on-task
+    business_minutes_calc_sql = """
+        select tix.ticket_id,
+        tix.open_time,
+        tix.close_time,
+        cal.date_hour,
+        case
+            when cal.date = CAST(tix.open_time AS DATE) AND cal.hour = date_part('hour', tix.open_time) then 60 - date_part('minute', tix.open_time)
+            when cal.date = CAST(tix.close_time AS DATE) AND cal.hour = date_part('hour', tix.close_time) then date_part('minute', tix.close_time)
+        else 60
+        end as minutes_on_task_by_business_hour
+        from ticket_table as tix
+        inner join calendar_df as cal on ((cal.date_hour >= tix.open_time OR (cal.date = tix.open_date and cal.hour = tix.open_hour))
+                                        and (cal.date_hour <= tix.close_time))
+        where cal.is_business_hour = true 
+        order by tix.ticket_id, cal.date_hour asc
+    """
+    rows_by_business_hours = duckdb.sql(business_minutes_calc_sql).fetchdf()
+    aggregation = duckdb.sql("""SELECT ticket_id, 
+                             sum(minutes_on_task_by_business_hour) as business_minutes_on_task,
+                             round(sum(minutes_on_task_by_business_hour) / 60, 1) as business_hours_on_task
+                             from rows_by_business_hours 
+                             GROUP BY ticket_id
+                             """).fetchdf()
+    st.header("Results")
+    st.subheader("Business Minutes on Task by Ticket")
+    st.dataframe(aggregation)
+    st.subheader("Calculation Details")
+    st.dataframe(rows_by_business_hours)
+
