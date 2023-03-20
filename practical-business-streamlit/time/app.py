@@ -1,7 +1,11 @@
 import streamlit as st
 import pandas as pd
 import duckdb
-from datetime import time, date, timedelta
+from datetime import datetime, time, date, timedelta
+import numpy as np
+import plotly.figure_factory as ff
+
+WEEK_DAYS_DICT = {'Monday':0,'Tuesday':1,'Wednesday':2,'Thursday':3,'Friday':4,'Saturday':5,'Sunday':6}
 
 st.image("https://thumbs.gfycat.com/OblongImportantHowlermonkey-size_restricted.gif")
 
@@ -19,20 +23,27 @@ end_date = st.date_input(
 
 delta = end_date - start_date
 
+st.subheader("Select Days your Business is Open")
+selected_business_week_days = st.multiselect('Day of Week', ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'],
+                                    default=['Monday','Tuesday','Wednesday','Thursday','Friday'])
+
+selected_day_of_week = [WEEK_DAYS_DICT[day] for day in selected_business_week_days]
+
 #Create a list of all dates in range from start date to end date
 date_list = [start_date + timedelta(days=x) for x in range(delta.days)]
 
-#boolean for each date
+#boolean for whether date in date_list is a working day according to user input
+is_business_day = [i.weekday() in selected_day_of_week for i in date_list]
+
+#boolean set to False for each date to allow user selection of company holidays from editable df
 is_company_holiday = [False for x in date_list]
 
 #output an editable dataframe
-df_dates = pd.DataFrame(list(zip(date_list, is_company_holiday)),
-               columns =['date', 'is_company_holiday'])
+df_dates = pd.DataFrame(list(zip(date_list, is_business_day, is_company_holiday)),
+               columns =['date', 'is_business_day', 'is_company_holiday'])
 
 st.subheader("Select your Business Holiday Dates")
 edited_df = st.experimental_data_editor(df_dates)
-
-company_holiday_dates = list(edited_df[edited_df["is_company_holiday"]==True].date)
 
 st.subheader("Select your Business's Operating Hours")
 business_hours_window = st.slider(
@@ -50,7 +61,8 @@ if generate_calculation_button:
             SELECT generate_series as date_hour,
             CAST(generate_series AS DATE) as date,
             date_part('hour', generate_series) as hour,
-            CASE WHEN date_part('hour', generate_series) BETWEEN {start.hour} AND {close.hour} THEN TRUE ELSE FALSE END AS business_hour
+            date_part('weekday', generate_series) as iso_day_of_week,
+            CASE WHEN (date_part('hour', generate_series) BETWEEN {start.hour} AND {close.hour}) THEN TRUE ELSE FALSE END AS business_hour
             FROM generate_series(TIMESTAMP '{start_date}', TIMESTAMP '{end_date}', INTERVAL 60 MINUTE)
             )
             select t1.date_hour,
@@ -59,6 +71,7 @@ if generate_calculation_button:
             edited_df.is_company_holiday as is_company_holiday,
             CASE 
             when edited_df.is_company_holiday = TRUE THEN FALSE
+            when edited_df.is_business_day = FALSE THEN FALSE
             when t1.business_hour = FALSE THEN FALSE
             else TRUE
             END AS is_business_hour
@@ -108,8 +121,20 @@ if generate_calculation_button:
                              GROUP BY ticket_id
                              """).fetchdf()
     st.header("Results")
-    st.subheader("Business Minutes on Task by Ticket")
+    st.subheader("Business Time on Task by Ticket")
     st.dataframe(aggregation)
     st.subheader("Calculation Details")
     st.dataframe(rows_by_business_hours)
+
+    #plot a histogram
+    hist_data = [aggregation['business_hours_on_task']]
+
+    group_labels = ['Hours on Task']
+
+    # Create distplot with custom bin_size
+    fig = ff.create_distplot(
+            hist_data, group_labels, bin_size=[30])
+
+    # Plot!
+    st.plotly_chart(fig, use_container_width=True)
 
