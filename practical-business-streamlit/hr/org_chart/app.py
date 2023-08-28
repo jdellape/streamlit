@@ -13,8 +13,8 @@ class Employee:
 def build_hierarchy(employee_data):
     hierarchy = {}
     for employee in employee_data:
-        emp_id = employee.emp_id
-        manager_id = employee.manager_id
+        emp_id = str(employee.emp_id)
+        manager_id = str(employee.manager_id)
 
         if emp_id not in hierarchy:
             hierarchy[emp_id] = {}
