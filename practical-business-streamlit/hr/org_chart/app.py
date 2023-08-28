@@ -66,7 +66,7 @@ if input_file is not None:
     st.write("Find a Manager's Management Chain")
 
     #Select manager id who you want to capture all reports (direct + indirect)
-    selected_manager_id = st.selectbox('Select Manager of Interest', sorted(set(list(input_df.manager_id))))
+    selected_manager_id = st.selectbox('Select Manager of Interest', set(list(input_df.manager_id)))
 
     reports_with_managers = find_all_reports_with_managers(hierarchy, str(selected_manager_id))
 
