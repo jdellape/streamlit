@@ -53,7 +53,7 @@ if input_file is not None:
     input_df = pd.read_csv(input_file)
 
     #Create employee object for each df row
-    employees = [Employee(row.emp_id, row.manager_id) for row in input_df.itertuples()]
+    employees = [Employee(str(row.emp_id), str(row.manager_id)) for row in input_df.itertuples()]
 
     #st.write(employees)
 
